@@ -1,0 +1,105 @@
+---
+author: Jed Roundy
+---
+
+#Libraries and Setup
+```{r}
+#|output == FALSE
+library(httr)
+library(jsonlite)
+library(tidyverse)
+source('soda_api_key.R')
+```
+
+```{r}
+query <- 'sodalicious'
+url <- 'https://maps.googleapis.com/maps/api/place/textsearch/json'
+
+params <- list(
+  query = query, 
+  key = soda_api_key
+)
+```
+
+#Get Locations
+```{r}
+  
+response <- GET(url, query = params)
+data_returned <- content(response, 'parsed')$results
+
+place_ids <- c()
+address_list <- c()
+for(location in 1:length(data_returned)){
+  place_id <- data_returned[[location]]$place_id
+  address <- data_returned[[location]]$formatted_address
+  
+  place_ids <- c(place_ids, place_id)
+  address_list <- c(address_list, address)
+}
+
+df <- as.data.frame(list(place_ids, address_list), col.names = list('PlaceID', 'Address'), row.names = NULL)
+```
+
+#Get Reviews/Details
+```{r}
+
+reviews_list <- list()
+for(location in 1:nrow(df)){
+  # Define the place ID and the API key
+  place_id <- df$PlaceID[location]
+  
+  # Define the URL
+  url <- "https://maps.googleapis.com/maps/api/place/details/json"
+  
+  # Set up the query parameters
+  params <- list(
+    place_id = place_id,
+    key = soda_api_key
+  )
+  
+  # Make the API call
+  response <- GET(url, query = params)
+  
+  # Check the status of the response
+  if (response$status_code == 200) {
+    # Parse the JSON response
+    content <- content(response, "text")
+    json_data <- fromJSON(content)
+    
+    # Extract specific details
+    result <- json_data$result
+    current_reviews <- result$reviews
+    current_reviews$place_id <- rep(place_id, nrow(current_reviews))
+    reviews_list[[location]] <- current_reviews
+
+
+  } else {
+    # Print the error message
+    print(paste("Error:", response$status_code))
+  }
+}
+
+reviews <- do.call(rbind, reviews_list)
+```
+
+#Additional Cleaning
+```{r}
+mod_reviews <- reviews |> 
+  select(-c('author_url', 'profile_photo_url', 'relative_time_description')) |> 
+  mutate(
+    time = as_datetime(time, tz = 'UTC'), 
+    time = with_tz(time, tz = 'US/Mountain'),
+    hour = hour(time), 
+    day_name = wday(time), 
+    day_num = day(time), 
+    month = month(time), 
+    year = year(time)
+  )
+```
+
+#Apply NLP
+```{r}
+
+
+
+```
